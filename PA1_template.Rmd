@@ -7,19 +7,122 @@ output:
 
 
 ## Loading and preprocessing the data
+### Upzip activity.zip 
 
+``` {r upzip, message = FALSE}
+unzip("activity.zip")
 
+```
+
+### Load and preview data
+``` {r loadData}
+act <- read.csv("activity.csv")
+summary(act)
+```
+
+### Convert date into POSIXct class (ymd format)
+```{r date_conversion, message=FALSE}
+require(lubridate)
+act$date <- ymd(act$date)
+str(act)
+```
 
 ## What is mean total number of steps taken per day?
 
+### Calculate total number of steps taken per day
+``` {r total_per_day, message = FALSE}
+by_date_total <- data.frame(tapply(act$steps, act$date, sum, na.rm = TRUE))
+colnames(by_date_total) <- "total_steps"
+by_date_total$Date <- rownames(by_date_total)
+```
 
+### Make histogram of the total number of steps taken per day and report mean and median
+``` {r hist, message = FALSE}
+require(ggplot2)
+ggplot(data=by_date_total, aes(x=as.factor(Date), y=total_steps))+
+  geom_bar(stat = "identity")+xlab("Date")+ylab("Total Steps Per Day")+
+  theme_bw()+theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9))
+```
+
+### Calculate mean and median
+```{r summary}
+m_step <- mean(by_date_total$total_steps, na.rm = TRUE)
+med_step <- median(by_date_total$total_steps, na.rm = TRUE)
+```
+The mean total number of steps taken per day is `r round(m_step,2)` steps, and 
+the median total number of steps take per day is `r med_step` steps.
 
 ## What is the average daily activity pattern?
 
+### Make a time series plot of the 5-minute interval and the average number of steps taken, averaged across all days
+```{r pattern, message=FALSE}
+require(dplyr)
+daily_act <- act%>%group_by(interval)%>%summarise(mean=mean(steps,na.rm=TRUE))
 
+ggplot(data=daily_act, aes(x=interval, y=mean))+
+  geom_line()+xlab("Intervals")+
+  ylab("Average number of steps taken across all day")+
+  theme_bw()
+```
+
+### Find the 5-minute interval that contains the maximum number of steps
+```{r step_max}
+step_max <- daily_act$interval[which.max(daily_act$mean)]
+```
+The interval `r step_max` contains the maximum number of steps of `r round(max(daily_act$mean),2)`
 
 ## Imputing missing values
 
+### Calculate the number of NAs in the dataset
+```{r na}
+numNA <- sum(is.na(act$steps))
+```
+The number of NAs in the dataset is `r numNA`
 
+### Devise strategy to fill in the missing values in the dataset
+The missing values will be replaced with the median of the corresponding 5-min interval.
+
+### Create new dataset with missing values filled in
+```{r full}
+replace <- daily_act[match(filter(act,is.na(steps))$interval,daily_act$interval),"mean"]
+act[is.na(act$steps),"steps"] <- as.vector(replace)
+```
+
+### Make histogram of the total number of steps taken per day and report mean and median
+``` {r full_hist, message = FALSE}
+by_date <- data.frame(tapply(act$steps, act$date, sum, na.rm = TRUE))
+colnames(by_date) <- "total_steps"
+by_date$Date <- rownames(by_date)
+
+ggplot(data=by_date, aes(x=as.factor(Date), y=total_steps))+
+  geom_bar(stat = "identity")+xlab("Date")+ylab("Total Steps Per Day")+
+  theme_bw()+theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9))
+
+mean_step <- mean(by_date$total_steps, na.rm = TRUE)
+median_step <- median(by_date$total_steps, na.rm = TRUE)
+```
+The mean total number of steps taken per day is `r round(mean_step,2)` steps, and 
+the median total number of steps take per day is `r median_step` steps.
+Both mean and median increase with the input of missing values.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+### Make an indicator for whether a given day is weekday or not
+```{r weekday}
+act$isWeekDay <- ifelse(weekdays(act$date)=="Sunday" | weekdays(act$date)=="Saturday",
+                        "Weekend", "Weekday")
+```
+
+### Make a time series plot of the 5-minute interval and the average number of steps taken, averaged across all days, comparing weekday and weekend
+```{r weekPlot}
+week_act <- data.frame(tapply(act$steps, list(act$interval, act$isWeekDay), 
+                              mean, na.rm = TRUE))
+week_act$Interval <- rownames(week_act)
+
+require(reshape)
+act_plot <- melt(week_act)
+ggplot(data=act_plot, aes(x=as.numeric(Interval), y=value))+
+    geom_line()+xlab("Intervals")+
+  ylab("Average number of steps taken across all day")+
+  theme_bw()+facet_wrap(.~variable)
+```
